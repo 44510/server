@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Bit.Core.Context;
+using System.Text.Json;
 using Bit.Core.Entities;
 using Bit.Core.Enums;
 using Bit.Core.Models;
@@ -16,7 +17,6 @@ using Bit.Core.Utilities;
 using Bit.IntegrationTestCommon.Factories;
 using Bit.Test.Common.AutoFixture.Attributes;
 using Bit.Test.Common.Helpers;
-using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -88,7 +88,7 @@ namespace Bit.Identity.IntegrationTest.Endpoints
                 { "grant_type", "password" },
                 { "username", username },
                 { "password", "master_password_hash" },
-            }), context => context.Request.Headers.Add("Auth-Email", CoreHelpers.Base64UrlEncodeString(username)));
+            }), context => context.SetAuthEmail(username));
 
             using var body = await AssertDefaultTokenBodyAsync(context);
             var root = body.RootElement;
@@ -191,7 +191,7 @@ namespace Bit.Identity.IntegrationTest.Endpoints
                 { "grant_type", "password" },
                 { "username", username },
                 { "password", "master_password_hash" },
-            }), context => context.Request.Headers.Add("Auth-Email", CoreHelpers.Base64UrlEncodeString("bad_value")));
+            }), context => context.SetAuthEmail("bad_value"));
 
             Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
 
@@ -521,6 +521,57 @@ namespace Bit.Identity.IntegrationTest.Endpoints
             var username = "test+captcha@email.com";
             var deviceId = Guid.NewGuid();
 
+            var userRepo = _factory.Services.GetRequiredService<IUserRepository>();
+            var user = await userRepo.GetByEmailAsync(username);
+
+            user.SetTwoFactorProviders(new Dictionary<TwoFactorProviderType, TwoFactorProvider>
+            {
+                { TwoFactorProviderType.Authenticator, new TwoFactorProvider
+                {
+                    Enabled = true,
+                    MetaData = new Dictionary<string, object>
+                    {
+                        { "Key", "ORSXG5C7NNSXSMJS" }, // "test_key12" base32 encoded
+                    },
+                }},
+            });
+
+            await userRepo.UpsertAsync(user);
+
+            var context = await _factory.Server.PostAsync("/connect/token", new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                { "scope", "api offline_access" },
+                { "client_id", "web" },
+                { "deviceType", DeviceTypeAsString(DeviceType.ChromeBrowser) },
+                { "deviceIdentifier", deviceId.ToString() },
+                { "deviceName", "chrome" },
+                { "grant_type", "password" },
+                { "username", username },
+                { "password", "master_password_hash" },
+                { "TwoFactorProvider", "Authenticator" },
+                { "TwoFactorToken", "bad_token" },
+            }), context => context.Request.Headers.Add("Auth-Email", CoreHelpers.Base64UrlEncodeString(username)));
+
+            Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+
+            using var body = await AssertHelper.AssertResponseTypeIs<JsonDocument>(context);
+            var root = body.RootElement;
+            var error = AssertHelper.AssertJsonProperty(root, "error", JsonValueKind.String).GetString();
+            Assert.Equal("invalid_grant", error);
+            var errorDescription = AssertHelper.AssertJsonProperty(root, "error_description", JsonValueKind.String).GetString();
+            Assert.Equal("invalid_username_or_password", errorDescription);
+            var errorModelElement = AssertHelper.AssertJsonProperty(root, "ErrorModel", JsonValueKind.Object);
+        }
+        
+        [Fact]
+        public async Task TokenEndpoint_ToQuickInOneSecond_BlockRequest()
+        {
+            const int AmountInOneSecondAllowed = 5;
+
+            // The rule we are testing is 10 requests in 1 second
+            var username = "test+ratelimiting@email.com";
+            var deviceId = "8f14a393-edfe-40ba-8c67-a856cb89c509";
+
             await _factory.RegisterAsync(new RegisterRequestModel
             {
                 Email = username,
@@ -568,7 +619,6 @@ namespace Bit.Identity.IntegrationTest.Endpoints
             Assert.Equal("invalid_username_or_password", errorDescription);
             var errorModelElement = AssertHelper.AssertJsonProperty(root, "ErrorModel", JsonValueKind.Object);
         }
-
 
         private static string DeviceTypeAsString(DeviceType deviceType)
         {
