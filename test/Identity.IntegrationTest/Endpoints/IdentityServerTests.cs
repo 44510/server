@@ -1,11 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Net.Http;
-using System.Text.Json;
-using System.Threading.Tasks;
+﻿using System.Text.Json;
 using Bit.Core.Context;
-using System.Text.Json;
 using Bit.Core.Entities;
 using Bit.Core.Enums;
 using Bit.Core.Models;
@@ -18,7 +12,6 @@ using Bit.IntegrationTestCommon.Factories;
 using Bit.Test.Common.AutoFixture.Attributes;
 using Bit.Test.Common.Helpers;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Xunit;
 
@@ -206,7 +199,6 @@ namespace Bit.Identity.IntegrationTest.Endpoints
         [Fact]
         public async Task TokenEndpoint_GrantTypePassword_Desktop_Success()
         {
-            var deviceId = "1499f63c-fcad-4f32-bc3c-24334dc5da30";
             var username = "test+desktop@email.com";
 
             await _factory.RegisterAsync(new RegisterRequestModel
@@ -464,7 +456,7 @@ namespace Bit.Identity.IntegrationTest.Endpoints
 
             // Use a special factory so we can use a mocked ICaptchaValidationService
             var factory = new IdentityApplicationFactory();
-            
+
             factory.SubstituteService<ICaptchaValidationService>(service =>
             {
                 service
@@ -562,11 +554,10 @@ namespace Bit.Identity.IntegrationTest.Endpoints
             Assert.Equal("invalid_username_or_password", errorDescription);
             var errorModelElement = AssertHelper.AssertJsonProperty(root, "ErrorModel", JsonValueKind.Object);
         }
-        
+
         [Fact]
         public async Task TokenEndpoint_ToQuickInOneSecond_BlockRequest()
         {
-            const int AmountInOneSecondAllowed = 5;
 
             // The rule we are testing is 10 requests in 1 second
             var username = "test+ratelimiting@email.com";

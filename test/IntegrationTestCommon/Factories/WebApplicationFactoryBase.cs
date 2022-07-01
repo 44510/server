@@ -1,9 +1,8 @@
-using AspNetCoreRateLimit;
+﻿using AspNetCoreRateLimit;
 using Bit.Core.Repositories;
 using Bit.Core.Services;
 using Bit.Infrastructure.EntityFramework.Repositories;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
