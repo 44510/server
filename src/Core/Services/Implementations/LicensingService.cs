@@ -196,7 +196,7 @@ namespace Bit.Core.Services
 
         private async Task<bool> ProcessUserValidationAsync(User user)
         {
-            var license = ReadUserLicense(user);
+            var license = await ReadUserLicenseAsync(user);
             if (license == null)
             {
                 await DisablePremiumAsync(user, null, "No license file.");
@@ -247,16 +247,16 @@ namespace Bit.Core.Services
             return license.Sign(_certificate);
         }
 
-        private UserLicense ReadUserLicense(User user)
+        private async Task<UserLicense> ReadUserLicenseAsync(User user)
         {
-            var filePath = $"{_globalSettings.LicenseDirectory}/user/{user.Id}.json";
+            var filePath = Path.Combine(_globalSettings.LicenseDirectory, "user", $"{user.Id}.json");
             if (!File.Exists(filePath))
             {
                 return null;
             }
 
-            var data = File.ReadAllText(filePath, Encoding.UTF8);
-            return JsonSerializer.Deserialize<UserLicense>(data);
+            await using var fs = File.OpenRead(filePath);
+            return await JsonSerializer.DeserializeAsync<UserLicense>(fs, JsonHelpers.IgnoreCase);
         }
 
         public Task<OrganizationLicense> ReadOrganizationLicenseAsync(Organization organization) =>
@@ -269,8 +269,8 @@ namespace Bit.Core.Services
                 return null;
             }
 
-            using var fs = File.OpenRead(filePath);
-            return await JsonSerializer.DeserializeAsync<OrganizationLicense>(fs);
+            await using var fs = File.OpenRead(filePath);
+            return await JsonSerializer.DeserializeAsync<OrganizationLicense>(fs, JsonHelpers.IgnoreCase);
         }
     }
 }
