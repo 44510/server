@@ -451,7 +451,7 @@ namespace Bit.Identity.IntegrationTest.Endpoints
         [Fact]
         public async Task TokenEndpoint_WithCaptcha_ReturnsBypass()
         {
-            var username = "test+captcha@email.com";
+            var username = "test+captchabypass@email.com";
             var deviceId = Guid.NewGuid();
 
             // Use a special factory so we can use a mocked ICaptchaValidationService
@@ -490,7 +490,7 @@ namespace Bit.Identity.IntegrationTest.Endpoints
                 { "username", username },
                 { "password", "master_password_hash" },
                 { "captchaResponse", "test_captcha" }
-            }), context => context.Request.Headers.Add("Auth-Email", CoreHelpers.Base64UrlEncodeString(username)));
+            }), context => context.SetAuthEmail(username));
 
             Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
 
@@ -508,10 +508,73 @@ namespace Bit.Identity.IntegrationTest.Endpoints
         }
 
         [Fact]
+        public async Task TokenEndpoint_RequiresCaptcha_NoCaptchaResponse_ReturnsCaptchaRequired()
+        {
+            var username = "test+captchanoresponse@email.com";
+            var deviceId = Guid.NewGuid();
+
+            // Use a special factory so we can use a mocked ICaptchaValidationService
+            var factory = new IdentityApplicationFactory();
+
+            factory.SubstituteService<ICaptchaValidationService>(service =>
+            {
+                service
+                    .RequireCaptchaValidation(Arg.Any<ICurrentContext>(), Arg.Any<User>())
+                    .Returns(true);
+
+                service
+                    .SiteKeyResponseKeyName
+                    .Returns("site_key_response_key_name");
+
+                service
+                    .SiteKey
+                    .Returns("site_key");
+            });
+
+            await factory.RegisterAsync(new RegisterRequestModel
+            {
+                Email = username,
+                MasterPasswordHash = "master_password_hash",
+                CaptchaResponse = "test_captcha",
+            });
+
+            var context = await factory.Server.PostAsync("/connect/token", new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                { "scope", "api offline_access" },
+                { "client_id", "web" },
+                { "deviceType", DeviceTypeAsString(DeviceType.ChromeBrowser) },
+                { "deviceIdentifier", deviceId.ToString() },
+                { "deviceName", "chrome" },
+                { "grant_type", "password" },
+                { "username", username },
+                { "password", "master_password_hash" },
+            }), context => context.SetAuthEmail(username));
+
+            Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+
+            using var body = await AssertHelper.AssertResponseTypeIs<JsonDocument>(context);
+            var root = body.RootElement;
+
+            var error = AssertHelper.AssertJsonProperty(root, "error", JsonValueKind.String).GetString();
+            Assert.Equal("invalid_grant", error);
+            var errorDescription = AssertHelper.AssertJsonProperty(root, "error_description", JsonValueKind.String).GetString();
+            Assert.Contains("captcha required", errorDescription, StringComparison.OrdinalIgnoreCase);
+            var siteKey = AssertHelper.AssertJsonProperty(root, "site_key_response_key_name", JsonValueKind.String).GetString();
+            Assert.Equal("site_key", siteKey);
+        }
+
+        [Fact]
         public async Task TokenEndpoint_Requires2FA_BadToken_ReturnsBadRequest()
         {
             var username = "test+captcha@email.com";
+            var password = "master_password_hash";
             var deviceId = Guid.NewGuid();
+
+            await _factory.RegisterAsync(new RegisterRequestModel
+            {
+                Email = username,
+                MasterPasswordHash = "master_password_hash",
+            });
 
             var userRepo = _factory.Services.GetRequiredService<IUserRepository>();
             var user = await userRepo.GetByEmailAsync(username);
@@ -539,10 +602,10 @@ namespace Bit.Identity.IntegrationTest.Endpoints
                 { "deviceName", "chrome" },
                 { "grant_type", "password" },
                 { "username", username },
-                { "password", "master_password_hash" },
+                { "password", password },
                 { "TwoFactorProvider", "Authenticator" },
                 { "TwoFactorToken", "bad_token" },
-            }), context => context.Request.Headers.Add("Auth-Email", CoreHelpers.Base64UrlEncodeString(username)));
+            }), context => context.SetAuthEmail(username));
 
             Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
 
