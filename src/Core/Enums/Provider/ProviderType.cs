@@ -2,7 +2,7 @@
 {
     public enum ProviderType : byte
     {
-        ManagedServiceProvider = 0,
+        MSP = 0,
         Reseller = 1
     }
 }
