@@ -19,6 +19,7 @@ namespace Bit.Core.Entities.Provider
         public bool Enabled { get; set; } = true;
         public DateTime CreationDate { get; internal set; } = DateTime.UtcNow;
         public DateTime RevisionDate { get; internal set; } = DateTime.UtcNow;
+        public ProviderType ProviderType { get; set; }
 
         public void SetNewId()
         {
